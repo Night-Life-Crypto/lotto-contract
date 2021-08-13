@@ -1,0 +1,32 @@
+{
+    "name": "Unibond",
+    "version": "1.0.0",
+    "description": "",
+    "main": "truffle-config.js",
+    "scripts": {
+        "compile": "truffle compile",
+        "test": "truffle test",
+        "verify:kovan": "sh verify.sh",
+        "deploy:kovan": "npx truffle migrate --network kovan",
+        "deploy:rinkeby": "npx truffle migrate --network rinkeby --skipDryRun",
+        "convert": "npx sol-merger './contracts/*.sol' './public'"
+    },
+    "directories": {
+        "test": "test"
+    },
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "@chainlink/contracts": "^0.2.1",
+        "@chainlink/test-helpers": "^0.0.7-alpha",
+        "@openzeppelin/contracts": "^3.2.0",
+        "dotenv": "^8.2.0",
+        "truffle": "^5.1.49",
+        "truffle-assertions": "^0.9.2",
+        "truffle-flattener": "^1.5.0",
+        "truffle-hdwallet-provider": "^1.0.17"
+    },
+    "devDependencies": {
+        "truffle-plugin-verify": "^0.5.2"
+    }
+}
