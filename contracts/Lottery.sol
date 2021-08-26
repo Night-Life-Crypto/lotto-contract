@@ -13,6 +13,7 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
     using Address for address;
     using SafeERC20 for IERC20;
     enum LOTTERY_STATE {
+        PENDING,
         OPEN,
         CLOSED,
         CALCULATING_WINNER
@@ -20,44 +21,44 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
     LOTTERY_STATE public lotteryState;
 
     address public NLIFE;
-    address public feeWallet;
 
-    bytes32 internal keyHash;
-    uint256 public fee;
+    bytes32 internal keyHash = 0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4;
 
+    uint256 public fee = 0.1 * 10**18;
     uint256 public lotteryId;
-    uint8 public randomNumberId;
-    mapping(bytes32 => uint256) public requestIds;
     uint256 public randomResult;
+    uint256 private winnerNumber1;
+    uint256 private winnerNumber2;
+    uint256 private winnerNumber3;
+    uint256 public ticketPrice;
     uint256[] public randomNumber;
 
-    address[] public players;
-
-    uint256 public winnerNumber1;
-    uint256 public winnerNumber2;
-    uint256 public winnerNumber3;
-    address[] public firstWinners;
-    address[] public secondWinners;
+    uint8 public randomNumberId;
     uint8 public winnerType;
 
+    address public feeWallet;
+    address[] public players;
+    address[] public firstWinners;
+    address[] public secondWinners;
+
+    mapping(bytes32 => uint256) public requestIds;
     mapping(address => uint256) public tickets;
-    uint256 public ticketPrice;
 
     struct LotteryValue {
         address player;
-        uint64 number1;
-        uint64 number2;
-        uint64 number3;
+        uint32 number1;
+        uint32 number2;
+        uint32 number3;
     }
 
-    LotteryValue[] public _lotteryValue;
+    LotteryValue[] public lotteryValue;
 
     event BUY_TICKET(address buyer, uint256 amount);
     event ENTER_LOTTERY(
         address player,
-        uint64 number1,
-        uint64 number2,
-        uint64 number3
+        uint32 number1,
+        uint32 number2,
+        uint32 number3
     );
     event LOTTERY_WINNERS(
         address[] firstWinners,
@@ -77,7 +78,6 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
     constructor(
         address _vrfCoordinator,
         address _link,
-        bytes32 _keyHash,
         address _NLIFE
     )
         public
@@ -86,10 +86,10 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
             _link // LINK Token
         )
     {
+        require(_vrfCoordinator != address(0), "NLIFE address is invalid.");
+        require(_link != address(0), "NLIFE address is invalid.");
+        require(_NLIFE != address(0), "NLIFE address is invalid.");
         NLIFE = _NLIFE;
-
-        keyHash = _keyHash;
-        fee = 0.1 * 10**18;
 
         lotteryId = 1;
         randomNumberId = 1;
@@ -101,14 +101,13 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
     /**
      * Requests randomness from a user-provided seed
      */
-    function getRandomNumber() public {
+    function getRandomNumber() private {
         require(
             LINK.balanceOf(address(this)) >= fee,
             "Not enough LINK - fill contract with faucet"
         );
         bytes32 _requestId = requestRandomness(keyHash, fee);
         requestIds[_requestId] = lotteryId;
-        lotteryId = lotteryId + 1;
     }
 
     /**
@@ -196,9 +195,9 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
      * enter lottery
      */
     function enter(
-        uint64 _number1,
-        uint64 _number2,
-        uint64 _number3
+        uint32 _number1,
+        uint32 _number2,
+        uint32 _number3
     ) public {
         require(
             lotteryState == LOTTERY_STATE.OPEN,
@@ -220,7 +219,7 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
 
         tickets[msg.sender] = tickets[msg.sender] - 1;
         players.push(msg.sender);
-        _lotteryValue.push(
+        lotteryValue.push(
             LotteryValue(msg.sender, _number1, _number2, _number3)
         );
 
@@ -260,19 +259,19 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
 
         for (uint256 i = 0; i < players.length; i++) {
             winnerType = 0;
-            if (_lotteryValue[i].number1 == winnerNumber1) {
+            if (lotteryValue[i].number1 == winnerNumber1) {
                 winnerType++;
             }
-            if (_lotteryValue[i].number2 == winnerNumber2) {
+            if (lotteryValue[i].number2 == winnerNumber2) {
                 winnerType++;
             }
-            if (_lotteryValue[i].number3 == winnerNumber3) {
+            if (lotteryValue[i].number3 == winnerNumber3) {
                 winnerType++;
             }
             if (winnerType == 2) {
-                secondWinners.push(_lotteryValue[i].player);
+                secondWinners.push(lotteryValue[i].player);
             } else if (winnerType == 3) {
-                firstWinners.push(_lotteryValue[i].player);
+                firstWinners.push(lotteryValue[i].player);
             }
         }
 
@@ -280,15 +279,15 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
         uint256 secondAmount = 0;
         if (secondWinners.length > 0) {
             secondAmount = (jackPotAmount * 20) / 100;
-            sendFunds(secondWinners, secondAmount / secondWinners.length);
+            sendFunds(secondWinners, secondAmount / secondWinners.length, secondAmount);
 
             if (firstWinners.length > 0) {
                 firstAmount = jackPotAmount - secondAmount;
-                sendFunds(firstWinners, firstAmount / firstWinners.length);
+                sendFunds(firstWinners, firstAmount / firstWinners.length, firstAmount);
             }
         } else if (firstWinners.length > 0) {
             firstAmount = jackPotAmount / firstWinners.length;
-            sendFunds(firstWinners, firstAmount);
+            sendFunds(firstWinners, firstAmount, jackPotAmount);
         }
 
         emit LOTTERY_WINNERS(
@@ -299,7 +298,7 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
         );
 
         for (uint256 i = 0; i < players.length; i++) {
-            delete _lotteryValue[i];
+            delete lotteryValue[i];
         }
         players = new address[](0);
         firstWinners = new address[](0);
@@ -308,11 +307,12 @@ contract Lottery is Context, Ownable, VRFConsumerBase {
         //this kicks off the request and returns through fulfill_random
     }
 
-    function sendFunds(address[] memory receivers, uint256 amount) internal {
-        for (uint256 i = 0; i < receivers.length; i++) {
+    function sendFunds(address[] memory receivers, uint256 amount, uint256 totalAmount) internal {
+        for (uint256 i = 0; i < receivers.length-1; i++) {
             // LINK.transferFrom(address(this), receivers[i], amount);
             IERC20(NLIFE).transfer(receivers[i], amount);
         }
+        IERC20(NLIFE).transfer(receivers[receivers.length-1], totalAmount - (amount * (receivers.length-1)));
     }
 
     function getPlayers() public view returns (address[] memory) {
